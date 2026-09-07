@@ -8,7 +8,6 @@ use boringtun::noise::errors::WireGuardError;
 pub use boringtun::sleepyinstant::{ClockDuration, WallClock};
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
-use core::net::{IpAddr, SocketAddr};
 #[cfg(feature = "defmt")]
 use defmt::{debug, error, info, warn};
 use embassy_futures::select::{Either3, select3};
@@ -104,28 +103,12 @@ impl<'d> Runner<'d> {
         let mut socket =
             UdpSocket::new(stack, &mut rx_meta, &mut rx_buf, &mut tx_meta, &mut tx_buf);
 
-        #[cfg(feature = "proto-ipv6")]
-        if let Some(ip_config) = stack.config_v6() {
-            let ip = ip_config.address.address();
+        #[cfg(feature = "defmt")]
+        debug!("Bind to port {}", config.port);
+        if let Err(e) = socket.bind(config.port) {
             #[cfg(feature = "defmt")]
-            debug!("Bind to {}:{}", ip, config.port);
-            if let Err(e) = socket.bind(SocketAddr::new(IpAddr::from(ip), config.port)) {
-                #[cfg(feature = "defmt")]
-                info!("bind error: {:?}", e);
-                return Err(RunError::Bind(e));
-            }
-        }
-
-        #[cfg(feature = "proto-ipv4")]
-        if let Some(ip_config) = stack.config_v4() {
-            let ip = ip_config.address.address();
-            #[cfg(feature = "defmt")]
-            debug!("Bind to {}:{}", ip, config.port);
-            if let Err(e) = socket.bind(SocketAddr::new(IpAddr::from(ip), config.port)) {
-                #[cfg(feature = "defmt")]
-                info!("bind error: {:?}", e);
-                return Err(RunError::Bind(e));
-            }
+            info!("bind error: {:?}", e);
+            return Err(RunError::Bind(e));
         }
 
         let mut tun = create_tunnel(config);
