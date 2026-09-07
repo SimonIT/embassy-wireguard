@@ -5,6 +5,7 @@ mod wg;
 pub use crate::config::Config;
 use crate::wg::{MAX_PACKET, consume, create_tunnel, handle_routine_tun_result, send_ip_packet};
 use boringtun::noise::errors::WireGuardError;
+pub use boringtun::sleepyinstant::{ClockDuration, WallClock};
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
 use core::net::{IpAddr, SocketAddr};
@@ -50,12 +51,8 @@ pub enum RunError {
     Bind(BindError),
     /// Reading from the serial port failed.
     Read(RecvError),
-    /// Writing to the serial port failed.
-    Write(),
     /// Writing to the serial got EOF.
     Eof,
-    /// PPP protocol was terminated by the peer
-    Terminated,
 }
 
 #[derive(Debug)]
@@ -211,7 +208,7 @@ impl<'d> Runner<'d> {
     }
 }
 
-/// Create a PPP embassy-net driver instance.
+/// Create a WireGuard embassy-net driver instance.
 ///
 /// This returns two structs:
 /// - a `Device` that you must pass to the `embassy-net` stack.
