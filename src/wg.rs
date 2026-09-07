@@ -189,8 +189,12 @@ pub async fn consume(
 
             if let Some(proto) = route_protocol(config, packet) {
                 buf[..packet.len()].copy_from_slice(packet);
+                Ok(packet.len())
+            } else {
+                #[cfg(feature = "defmt")]
+                debug!("Dropping decapsulated packet: not routable to the local peer");
+                Ok(0)
             }
-            Ok(packet.len())
         }
         TunnResult::Err(e) => {
             #[cfg(feature = "defmt")]
