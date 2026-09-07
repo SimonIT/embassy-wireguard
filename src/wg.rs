@@ -1,3 +1,4 @@
+use crate::MTU;
 use crate::WGError;
 use crate::WGError::{EncapsulationError, Other, SendRoutineError};
 use crate::config::{Config, PortProtocol};
@@ -14,7 +15,15 @@ use smoltcp::wire::Ipv4Packet;
 use smoltcp::wire::Ipv6Packet;
 use smoltcp::wire::{IpProtocol, IpVersion};
 
-pub(crate) const MAX_PACKET: usize = 2048;
+/// Fixed per-packet overhead boringtun adds to a data packet (message type,
+/// sender index, counter and AEAD auth tag; see `DATA_OVERHEAD_SZ` in
+/// `boringtun::noise`).
+const WG_DATA_OVERHEAD: usize = 32;
+
+/// Large enough to encapsulate an outgoing full-MTU packet, and to guarantee
+/// that decapsulating a received packet can never produce a plaintext IP
+/// packet larger than `MTU`.
+pub(crate) const MAX_PACKET: usize = MTU + WG_DATA_OVERHEAD;
 
 pub async fn send_ip_packet(
     tun: &mut Tunn,
@@ -167,6 +176,16 @@ pub async fn consume(
 
             // For debugging purposes: parse packet
             trace_ip_packet("Received IP packet", packet);
+
+            if packet.len() > buf.len() {
+                #[cfg(feature = "defmt")]
+                error!(
+                    "Decapsulated packet of {} bytes does not fit in the {} byte rx buffer, dropping",
+                    packet.len(),
+                    buf.len()
+                );
+                return Ok(0);
+            }
 
             if let Some(proto) = route_protocol(config, packet) {
                 buf[..packet.len()].copy_from_slice(packet);

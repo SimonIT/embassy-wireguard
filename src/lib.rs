@@ -18,7 +18,11 @@ use embassy_net_driver_channel as ch;
 use embassy_net_driver_channel::driver::LinkState;
 use smoltcp::socket::udp::PacketMetadata;
 
-const MTU: usize = 1500;
+/// 1500 (typical Ethernet/WiFi MTU) minus the worst-case overhead of
+/// encapsulating a packet over an IPv6 outer transport: 40 (IPv6) + 8 (UDP)
+/// + 32 (WireGuard data overhead) = 80. Matches upstream WireGuard's
+/// `wg-quick` default tunnel MTU.
+pub(crate) const MTU: usize = 1420;
 
 /// Type alias for the embassy-net driver.
 pub type Device<'d> = embassy_net_driver_channel::Device<'d, MTU>;
@@ -92,10 +96,10 @@ impl<'d> Runner<'d> {
         let _ondrop = OnDrop::new(|| state_chan.set_link_state(LinkState::Down));
 
         let mut rx_meta = [PacketMetadata::EMPTY; 1];
-        let mut rx_buf = [0; 2048];
+        let mut rx_buf = [0; MAX_PACKET];
         let mut tx_meta = [PacketMetadata::EMPTY; 1];
-        let mut tx_buf = [0; 2048];
-        let mut buf = [0; 2048];
+        let mut tx_buf = [0; MAX_PACKET];
+        let mut buf = [0; MAX_PACKET];
 
         let mut socket =
             UdpSocket::new(stack, &mut rx_meta, &mut rx_buf, &mut tx_meta, &mut tx_buf);
