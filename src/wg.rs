@@ -147,21 +147,19 @@ pub async fn consume(
                 let mut send_buf = [0u8; MAX_PACKET];
                 match tun.decapsulate(None, &[], &mut send_buf) {
                     TunnResult::WriteToNetwork(packet) => {
-                        match socket.send_to(packet, config.endpoint_addr).await {
-                            Ok(_) => break Ok(0),
-                            Err(e) => {
-                                #[cfg(feature = "defmt")]
-                                error!(
-                                    "Failed to send a decapsulation-instructed packet to WireGuard endpoint: {:?}",
-                                    e
-                                );
-                                Err(WGError::SendDecapsulationError(e))
-                            }
-                        }?
+                        if let Err(e) = socket.send_to(packet, config.endpoint_addr).await {
+                            #[cfg(feature = "defmt")]
+                            error!(
+                                "Failed to send a decapsulation-instructed packet to WireGuard endpoint: {:?}",
+                                e
+                            );
+                            return Err(WGError::SendDecapsulationError(e));
+                        }
                     }
                     TunnResult::Err(e) => {
                         #[cfg(feature = "defmt")]
                         error!("Failed to decapsulate a received packet: {:?}", e);
+                        break Ok(0);
                     }
                     _ => break Ok(0),
                 }
