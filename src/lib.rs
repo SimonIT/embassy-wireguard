@@ -52,10 +52,8 @@ pub struct Runner<'d> {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum RunError {
     Bind(BindError),
-    /// Reading from the serial port failed.
+    /// Reading from the UDP socket failed.
     Read(RecvError),
-    /// Writing to the serial got EOF.
-    Eof,
 }
 
 #[derive(Debug)]
@@ -147,12 +145,11 @@ impl<'d> Runner<'d> {
 
             let rx_fut = async {
                 let rx_buf = rx_chan.rx_buf().await;
-                let rx_data = match socket.recv_from(&mut buf).await {
-                    Ok((0, remote_endpoint)) => return Err(RunError::Eof),
-                    Ok((n, remote_endpoint)) => &buf[..n],
-                    Err(e) => return Err(RunError::Read(e)),
-                };
-                Ok((rx_buf, rx_data))
+                match socket.recv_from(&mut buf).await {
+                    Ok((0, remote_endpoint)) => Ok(None),
+                    Ok((n, remote_endpoint)) => Ok(Some((rx_buf, &buf[..n]))),
+                    Err(e) => Err(RunError::Read(e)),
+                }
             };
             let tx_fut = tx_chan.tx_buf();
             match select3(routine_fut, rx_fut, tx_fut).await {
