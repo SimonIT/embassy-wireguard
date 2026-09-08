@@ -158,19 +158,21 @@ impl<'d> Runner<'d> {
                     debug!("Routine completed");
                 }
                 Either3::Second(r) => {
-                    #[cfg(feature = "defmt")]
-                    debug!("Have received packet to consume");
-                    match consume(stack, &mut tun, &socket, config, r?).await {
-                        Ok(len) => {
-                            #[cfg(feature = "defmt")]
-                            debug!("Consume successful");
-                            if len > 0 {
-                                rx_chan.rx_done(len);
+                    if let Some(r) = r? {
+                        #[cfg(feature = "defmt")]
+                        debug!("Have received packet to consume");
+                        match consume(stack, &mut tun, &socket, config, r).await {
+                            Ok(len) => {
+                                #[cfg(feature = "defmt")]
+                                debug!("Consume successful");
+                                if len > 0 {
+                                    rx_chan.rx_done(len);
+                                }
                             }
-                        }
-                        Err(e) => {
-                            #[cfg(feature = "defmt")]
-                            error!("{:?}", e);
+                            Err(e) => {
+                                #[cfg(feature = "defmt")]
+                                error!("{:?}", e);
+                            }
                         }
                     }
                 }
