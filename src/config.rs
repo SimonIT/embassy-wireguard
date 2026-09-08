@@ -29,25 +29,3 @@ pub struct Config {
     /// The port for incoming packets
     pub port: u16,
 }
-
-/// Layer 7 protocols for ports.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PortProtocol {
-    /// TCP
-    Tcp,
-    /// UDP
-    Udp,
-}
-
-impl TryFrom<&str> for PortProtocol {
-    type Error = ();
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value.to_uppercase().as_str() {
-            "TCP" => Ok(Self::Tcp),
-            "UDP" => Ok(Self::Udp),
-            _ => Err(()),
-        }
-    }
-}

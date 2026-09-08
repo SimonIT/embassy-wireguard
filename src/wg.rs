@@ -1,7 +1,7 @@
 use crate::MTU;
 use crate::WGError;
 use crate::WGError::{EncapsulationError, Other, SendRoutineError};
-use crate::config::{Config, PortProtocol};
+use crate::config::Config;
 use boringtun::noise::errors::WireGuardError;
 use boringtun::noise::{Tunn, TunnResult};
 #[cfg(feature = "defmt")]
@@ -215,30 +215,20 @@ pub(crate) fn create_tunnel(config: &Config) -> Tunn {
 }
 
 /// Determine the inner protocol of the incoming IP packet (TCP/UDP).
-pub(crate) fn route_protocol(config: &Config, packet: &[u8]) -> Option<PortProtocol> {
+pub(crate) fn route_protocol(config: &Config, packet: &[u8]) -> Option<IpProtocol> {
     match IpVersion::of_packet(packet) {
         #[cfg(feature = "proto-ipv4")]
         Ok(IpVersion::Ipv4) => Ipv4Packet::new_checked(&packet)
             .ok()
             // Only care if the packet is destined for this tunnel
             .filter(|packet| packet.dst_addr() == config.source_peer_ip)
-            .and_then(|packet| match packet.next_header() {
-                IpProtocol::Tcp => Some(PortProtocol::Tcp),
-                IpProtocol::Udp => Some(PortProtocol::Udp),
-                // Unrecognized protocol, so we cannot determine where to route
-                _ => None,
-            }),
+            .map(|packet| packet.next_header()),
         #[cfg(feature = "proto-ipv6")]
         Ok(IpVersion::Ipv6) => Ipv6Packet::new_checked(&packet)
             .ok()
             // Only care if the packet is destined for this tunnel
             .filter(|packet| packet.dst_addr() == config.source_peer_ip)
-            .and_then(|packet| match packet.next_header() {
-                IpProtocol::Tcp => Some(PortProtocol::Tcp),
-                IpProtocol::Udp => Some(PortProtocol::Udp),
-                // Unrecognized protocol, so we cannot determine where to route
-                _ => None,
-            }),
+            .map(|packet| packet.next_header()),
         _ => None,
     }
 }
