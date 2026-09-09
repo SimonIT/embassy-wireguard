@@ -4,6 +4,7 @@ use crate::WGError::{EncapsulationError, Other, SendRoutineError};
 use crate::config::Config;
 use boringtun::noise::errors::WireGuardError;
 use boringtun::noise::{Tunn, TunnResult};
+use core::cell::Cell;
 #[cfg(feature = "defmt")]
 use defmt::{debug, error, info, trace, warn};
 use embassy_net::Stack;
@@ -13,7 +14,7 @@ use embassy_time::Timer;
 use smoltcp::wire::Ipv4Packet;
 #[cfg(feature = "proto-ipv6")]
 use smoltcp::wire::Ipv6Packet;
-use smoltcp::wire::{IpProtocol, IpVersion};
+use smoltcp::wire::{IpEndpoint, IpProtocol, IpVersion};
 
 /// Fixed per-packet overhead boringtun adds to a data packet (message type,
 /// sender index, counter and AEAD auth tag; see `DATA_OVERHEAD_SZ` in
@@ -28,7 +29,7 @@ pub(crate) const MAX_PACKET: usize = MTU + WG_DATA_OVERHEAD;
 pub async fn send_ip_packet(
     tun: &mut Tunn,
     socket: &UdpSocket<'_>,
-    config: &Config,
+    current_endpoint: &Cell<IpEndpoint>,
     packet: &[u8],
 ) -> Result<(), WGError> {
     trace_ip_packet("Sending IP packet", packet);
@@ -36,7 +37,7 @@ pub async fn send_ip_packet(
     let encapsulate_result = tun.encapsulate(packet, &mut send_buf);
     match encapsulate_result {
         TunnResult::WriteToNetwork(packet) => {
-            let res = socket.send_to(packet, config.endpoint_addr).await;
+            let res = socket.send_to(packet, current_endpoint.get()).await;
             #[cfg(feature = "defmt")]
             debug!(
                 "Sent {} bytes to WireGuard endpoint (encrypted IP packet)",
@@ -68,7 +69,7 @@ pub async fn send_ip_packet(
 
 pub(crate) async fn handle_routine_tun_result(
     socket: &UdpSocket<'_>,
-    config: &Config,
+    current_endpoint: &Cell<IpEndpoint>,
     result: TunnResult<'_>,
 ) -> Result<(), WGError> {
     match result {
@@ -77,10 +78,10 @@ pub(crate) async fn handle_routine_tun_result(
             debug!(
                 "Sending a routine packet of {} bytes to {}",
                 packet.len(),
-                config.endpoint_addr
+                current_endpoint.get()
             );
             socket
-                .send_to(packet, config.endpoint_addr)
+                .send_to(packet, current_endpoint.get())
                 .await
                 .map_err(SendRoutineError)
         }
@@ -119,20 +120,31 @@ pub async fn consume(
     tun: &mut Tunn,
     socket: &UdpSocket<'_>,
     config: &Config,
-    r: (&mut [u8], &[u8]),
+    current_endpoint: &Cell<IpEndpoint>,
+    r: (&mut [u8], &[u8], IpEndpoint),
 ) -> Result<usize, WGError> {
-    let (buf, rx_data) = r;
+    let (buf, rx_data, from) = r;
     let mut send_buf = [0u8; MAX_PACKET];
 
     let decapsulate_result = tun.decapsulate(None, rx_data, &mut send_buf);
+
+    if !matches!(decapsulate_result, TunnResult::Err(_)) {
+        #[cfg(feature = "defmt")]
+        debug!(
+            "Decapsulation succeeded, setting current endpoint to {}",
+            from
+        );
+        current_endpoint.set(from);
+    }
+
     match decapsulate_result {
         TunnResult::WriteToNetwork(packet) => {
             #[cfg(feature = "defmt")]
             debug!(
                 "Decapsulation requested sending a packet to {}",
-                config.endpoint_addr
+                current_endpoint.get()
             );
-            match socket.send_to(packet, config.endpoint_addr).await {
+            match socket.send_to(packet, current_endpoint.get()).await {
                 Ok(_) => Ok(()),
                 Err(e) => {
                     #[cfg(feature = "defmt")]
@@ -147,7 +159,7 @@ pub async fn consume(
                 let mut send_buf = [0u8; MAX_PACKET];
                 match tun.decapsulate(None, &[], &mut send_buf) {
                     TunnResult::WriteToNetwork(packet) => {
-                        if let Err(e) = socket.send_to(packet, config.endpoint_addr).await {
+                        if let Err(e) = socket.send_to(packet, current_endpoint.get()).await {
                             #[cfg(feature = "defmt")]
                             error!(
                                 "Failed to send a decapsulation-instructed packet to WireGuard endpoint: {:?}",

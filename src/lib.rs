@@ -6,6 +6,7 @@ pub use crate::config::Config;
 use crate::wg::{MAX_PACKET, consume, create_tunnel, handle_routine_tun_result, send_ip_packet};
 use boringtun::noise::errors::WireGuardError;
 pub use boringtun::sleepyinstant::{ClockDuration, WallClock};
+use core::cell::Cell;
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
 #[cfg(feature = "defmt")]
@@ -16,11 +17,12 @@ use embassy_net::udp::{BindError, RecvError, SendError, UdpSocket};
 use embassy_net_driver_channel as ch;
 use embassy_net_driver_channel::driver::LinkState;
 use smoltcp::socket::udp::PacketMetadata;
+use smoltcp::wire::IpEndpoint;
 
 /// 1500 (typical Ethernet/WiFi MTU) minus the worst-case overhead of
 /// encapsulating a packet over an IPv6 outer transport: 40 (IPv6) + 8 (UDP)
 /// + 32 (WireGuard data overhead) = 80. Matches upstream WireGuard's
-/// `wg-quick` default tunnel MTU.
+///   `wg-quick` default tunnel MTU.
 pub(crate) const MTU: usize = 1420;
 
 /// Type alias for the embassy-net driver.
@@ -110,6 +112,7 @@ impl<'d> Runner<'d> {
         }
 
         let mut tun = create_tunnel(config);
+        let current_endpoint = Cell::new(IpEndpoint::from(config.endpoint_addr));
 
         loop {
             let routine_fut = async {
@@ -120,7 +123,7 @@ impl<'d> Runner<'d> {
                 loop {
                     #[cfg(feature = "defmt")]
                     debug!("Handling routine result");
-                    match handle_routine_tun_result(&socket, config, res).await {
+                    match handle_routine_tun_result(&socket, &current_endpoint, res).await {
                         Ok(_) => {
                             #[cfg(feature = "defmt")]
                             debug!("Successfully handled routine result");
@@ -146,8 +149,10 @@ impl<'d> Runner<'d> {
             let rx_fut = async {
                 let rx_buf = rx_chan.rx_buf().await;
                 match socket.recv_from(&mut buf).await {
-                    Ok((0, remote_endpoint)) => Ok(None),
-                    Ok((n, remote_endpoint)) => Ok(Some((rx_buf, &buf[..n]))),
+                    Ok((0, _remote_endpoint)) => Ok(None),
+                    Ok((n, remote_endpoint)) => {
+                        Ok(Some((rx_buf, &buf[..n], remote_endpoint.endpoint)))
+                    }
                     Err(e) => Err(RunError::Read(e)),
                 }
             };
@@ -161,7 +166,8 @@ impl<'d> Runner<'d> {
                     if let Some(r) = r? {
                         #[cfg(feature = "defmt")]
                         debug!("Have received packet to consume");
-                        match consume(stack, &mut tun, &socket, config, r).await {
+                        match consume(stack, &mut tun, &socket, config, &current_endpoint, r).await
+                        {
                             Ok(len) => {
                                 #[cfg(feature = "defmt")]
                                 debug!("Consume successful");
@@ -179,7 +185,7 @@ impl<'d> Runner<'d> {
                 Either3::Third(pkt) => {
                     #[cfg(feature = "defmt")]
                     debug!("Have to send packet of {} bytes", pkt.len());
-                    match send_ip_packet(&mut tun, &socket, config, pkt).await {
+                    match send_ip_packet(&mut tun, &socket, &current_endpoint, pkt).await {
                         Ok(_) => {
                             tx_chan.tx_done();
                         }

@@ -1,2 +1,2 @@
-# ariel-os-wireguard
+# embassy-wireguard
 

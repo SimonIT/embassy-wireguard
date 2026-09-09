@@ -20,7 +20,9 @@ pub struct Config {
     pub endpoint_public_key: PublicKey,
     /// The pre-shared key (PSK) as configured with the peer.
     pub preshared_key: Option<[u8; 32]>,
-    /// The address (IP + port) of the WireGuard endpoint (remote). Example: 1.2.3.4:51820
+    /// The initial address (IP + port) of the WireGuard endpoint (remote). Once a packet is
+    /// successfully authenticated from a different source address, the tunnel roams to that
+    /// address for all further sends.
     pub endpoint_addr: SocketAddr,
     /// The IP address assigned to this peer by the WireGuard endpoint.
     pub source_peer_ip: IpAddr,
