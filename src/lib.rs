@@ -99,6 +99,7 @@ impl<'d> Runner<'d> {
         let mut tx_meta = [PacketMetadata::EMPTY; 1];
         let mut tx_buf = [0; MAX_PACKET];
         let mut buf = [0; MAX_PACKET];
+        let mut decap_buf = [0; MAX_PACKET];
 
         let mut socket =
             UdpSocket::new(stack, &mut rx_meta, &mut rx_buf, &mut tx_meta, &mut tx_buf);
@@ -147,12 +148,9 @@ impl<'d> Runner<'d> {
             };
 
             let rx_fut = async {
-                let rx_buf = rx_chan.rx_buf().await;
                 match socket.recv_from(&mut buf).await {
                     Ok((0, _remote_endpoint)) => Ok(None),
-                    Ok((n, remote_endpoint)) => {
-                        Ok(Some((rx_buf, &buf[..n], remote_endpoint.endpoint)))
-                    }
+                    Ok((n, remote_endpoint)) => Ok(Some((&buf[..n], remote_endpoint.endpoint))),
                     Err(e) => Err(RunError::Read(e)),
                 }
             };
@@ -163,16 +161,36 @@ impl<'d> Runner<'d> {
                     debug!("Routine completed");
                 }
                 Either3::Second(r) => {
-                    if let Some(r) = r? {
+                    if let Some((rx_data, from)) = r? {
                         #[cfg(feature = "defmt")]
                         debug!("Have received packet to consume");
-                        match consume(stack, &mut tun, &socket, config, &current_endpoint, r).await
+                        match consume(
+                            stack,
+                            &mut tun,
+                            &socket,
+                            config,
+                            &current_endpoint,
+                            (&mut decap_buf, rx_data, from),
+                        )
+                        .await
                         {
                             Ok(len) => {
                                 #[cfg(feature = "defmt")]
                                 debug!("Consume successful");
                                 if len > 0 {
-                                    rx_chan.rx_done(len);
+                                    match rx_chan.try_rx_buf() {
+                                        Some(rx_buf) => {
+                                            rx_buf[..len].copy_from_slice(&decap_buf[..len]);
+                                            rx_chan.rx_done(len);
+                                        }
+                                        None => {
+                                            #[cfg(feature = "defmt")]
+                                            warn!(
+                                                "Dropping decapsulated packet of {} bytes: driver rx channel is full",
+                                                len
+                                            );
+                                        }
+                                    }
                                 }
                             }
                             Err(e) => {
