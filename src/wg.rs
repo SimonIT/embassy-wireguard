@@ -5,6 +5,7 @@ use crate::config::Config;
 use boringtun::noise::errors::WireGuardError;
 use boringtun::noise::{Tunn, TunnResult};
 use core::cell::Cell;
+use core::net::IpAddr;
 #[cfg(feature = "defmt")]
 use defmt::{debug, error, info, trace, warn};
 use embassy_net::Stack;
@@ -126,7 +127,7 @@ pub async fn consume(
     let (buf, rx_data, from) = r;
     let mut send_buf = [0u8; MAX_PACKET];
 
-    let decapsulate_result = tun.decapsulate(None, rx_data, &mut send_buf);
+    let decapsulate_result = tun.decapsulate(Some(IpAddr::from(from.addr)), rx_data, &mut send_buf);
 
     if !matches!(decapsulate_result, TunnResult::Err(_)) {
         #[cfg(feature = "defmt")]
