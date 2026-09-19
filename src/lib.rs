@@ -203,15 +203,12 @@ impl<'d> Runner<'d> {
                 Either3::Third(pkt) => {
                     #[cfg(feature = "defmt")]
                     debug!("Have to send packet of {} bytes", pkt.len());
-                    match send_ip_packet(&mut tun, &socket, &current_endpoint, pkt).await {
-                        Ok(_) => {
-                            tx_chan.tx_done();
-                        }
-                        Err(e) => {
-                            #[cfg(feature = "defmt")]
-                            error!("{:?}", e);
-                        }
+                    if let Err(_e) = send_ip_packet(&mut tun, &socket, &current_endpoint, pkt).await
+                    {
+                        #[cfg(feature = "defmt")]
+                        error!("{:?}", _e);
                     }
+                    tx_chan.tx_done();
                 }
             }
         }
