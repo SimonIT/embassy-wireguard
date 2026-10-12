@@ -5,7 +5,7 @@ mod wg;
 pub use crate::config::Config;
 use crate::wg::{MAX_PACKET, consume, create_tunnel, handle_routine_tun_result, send_ip_packet};
 use boringtun::noise::errors::WireGuardError;
-pub use boringtun::sleepyinstant::{ClockDuration, WallClock};
+pub use boringtun::sleepyinstant::{ClockDuration, WallClock, set_wall_clock};
 use core::cell::Cell;
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
@@ -16,6 +16,7 @@ use embassy_net::Stack;
 use embassy_net::udp::{BindError, RecvError, SendError, UdpSocket};
 use embassy_net_driver_channel as ch;
 use embassy_net_driver_channel::driver::LinkState;
+use embassy_time::Timer;
 use smoltcp::socket::udp::PacketMetadata;
 use smoltcp::wire::IpEndpoint;
 
@@ -140,6 +141,7 @@ impl<'d> Runner<'d> {
                                 res = tun.format_handshake_initiation(&mut send_buf, false);
                             } else {
                                 state_chan.set_link_state(LinkState::Down);
+                                Timer::after_millis(1).await;
                                 break;
                             }
                         }
