@@ -222,7 +222,7 @@ pub(crate) fn create_tunnel(config: &Config) -> Tunn {
         config.endpoint_public_key,
         config.preshared_key,
         config.keepalive_seconds,
-        0,
+        config.index,
         None,
     )
 }

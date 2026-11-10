@@ -30,4 +30,6 @@ pub struct Config {
     pub keepalive_seconds: Option<u16>,
     /// The port for incoming packets
     pub port: u16,
+    /// The local session index of the tunnel
+    pub index: u32,
 }
